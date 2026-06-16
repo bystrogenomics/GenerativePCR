@@ -3,21 +3,23 @@ import numpy as np
 
 def softplus_inverse_np(y):
     """
-    Computes the inverse of the softplus activation of x in a
-    numerically stable way
+    Compute the inverse of the softplus function in a numerically stable way.
 
-    Softplus: y = log(exp(x) + 1)
-    Softplus^{-1}: y = np.log(np.exp(x) - 1)
+    Softplus is defined as ``y = log(exp(x) + 1)``, so its inverse is
+    ``x = log(exp(y) - 1)``. For very small or very large ``y``, the naive
+    formula is numerically unstable; this function handles those edge cases
+    by clamping and substitution.
 
     Parameters
     ----------
-    x : np.array
-        Original array
+    y : array-like
+        Input array; should contain positive values (the range of softplus).
 
     Returns
     -------
-    x : np.array
-        Transformed array
+    x : ndarray
+        Array of the same shape as ``y`` containing the inverse softplus
+        values.
     """
     min_threshold = 10**-15
     max_threshold = 500
@@ -34,25 +36,49 @@ def softplus_inverse_np(y):
 
 def subset_square_matrix_np(Sigma, idxs):
     """
-    This returns a symmetric subset of a square matrix
+    Extract a symmetric submatrix from a square matrix.
 
     Parameters
     ----------
-    Sigma : np.array-like,(p,p)
-        Covariance matrix (presumably)
+    Sigma : ndarray of shape (n, n)
+        The square matrix to subset (typically a covariance matrix).
 
-    idxs : np.array-like,(p,)
-        Binary vector, 1 means select
+    idxs : ndarray of shape (n,)
+        Boolean or integer index array where 1 marks the rows/columns
+        to select.
+
     Returns
     -------
-    Sigma_sub : np.array-like,(sum(idxs),sum(idxs))
-        The subset of matrix
+    Sigma_sub : ndarray of shape (k, k)
+        The submatrix indexed by ``idxs == 1``, where ``k = idxs.sum()``.
     """
     Sigma_sub = Sigma[np.ix_(idxs == 1, idxs == 1)]
     return Sigma_sub
 
 
 def classify_missingness(matrix):
+    """
+    Group rows of a matrix by their NaN-missingness pattern.
+
+    Identifies unique patterns of missing values (NaN positions) across
+    rows and groups the rows accordingly.
+
+    Parameters
+    ----------
+    matrix : ndarray of shape (n_samples, n_features)
+        Input matrix potentially containing NaN values.
+
+    Returns
+    -------
+    matrices_list : list of ndarray
+        List of sub-matrices, one per unique missingness pattern.
+        Each sub-matrix contains all rows sharing that pattern.
+
+    vectors_list : list of ndarray of bool
+        List of boolean observation masks, one per unique pattern,
+        where ``True`` indicates that the feature is observed
+        (not NaN) in that group.
+    """
     pattern_dict = {}
     matrices_list = []
     vectors_list = []

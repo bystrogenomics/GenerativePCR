@@ -63,28 +63,30 @@ from ._base_covariance import (
 
 def _get_projection_matrix(W_: Tensor, sigma_: Tensor, device: Any):
     """
-    This is currently just implemented for PPCA due to nicer formula. Will
-    modify for broader application later.
+    Compute the posterior parameters of the latent distribution p(S|X).
 
-    Computes the parameters for p(S|X)
-
-    Description in future to be released paper
+    Currently implemented only for PPCA due to its closed-form expression.
+    Computes the projection matrix and posterior covariance via the matrix
+    M = W W^T + sigma * I.
 
     Parameters
     ----------
-    W_ : Tensor(n_components,p)
-        The loadings
+    W_ : Tensor of shape (n_components, p)
+        The factor loadings matrix.
 
     sigma_ : Tensor
-        Isotropic noise
+        Scalar isotropic noise variance.
+
+    device : Any
+        The PyTorch device (CPU or CUDA) on which to perform computations.
 
     Returns
     -------
-    Proj_X : Tensor(n_components,p)
-        Beta such that np.dot(Proj_X, X) = E[S|X]
+    Proj_X : Tensor of shape (n_components, p)
+        Projection matrix such that ``Proj_X @ X`` gives ``E[S|X]``.
 
-    Cov : Tensor(n_components,n_components)
-        Var(S|X)
+    Cov : Tensor of shape (n_components, n_components)
+        Posterior covariance ``Var(S|X)``.
     """
     n_components = int(W_.shape[0])
     eye = torch.tensor(np.eye(n_components).astype(np.float32), device=device)
@@ -101,30 +103,28 @@ def kl_divergence_vae(
     sigma1: torch.Tensor,
 ) -> torch.Tensor:
     """
-    Computes the Kullback-Leibler divergence between two multivariate
-    normal distributions.
+    Compute the KL divergence from N(mu1, diag(sigma1)) to N(0, I).
 
-    This function assumes the first distribution, N(mu1, sigma1),
-    represents the conditional distribution of latent variables given
-    observations (approximate posterior), and the second distribution
-    is the standard multivariate normal distribution N(0, I) representing
-    the marginal latent distribution (prior).
+    Computes ``KL(N(mu1, sigma1) || N(0, I))`` using the closed-form
+    expression for diagonal Gaussian distributions::
 
-    The KL divergence is computed using the formula:
-    KL(N(mu1, sigma1) || N(0, I)) = 0.5 * (tr(sigma1) +
-                            mu1^T * mu1 - log(det(sigma1)) - d)
-    where `d` is the dimensionality of the latent space.
+        KL = 0.5 * (tr(sigma1) + mu1^T mu1 - log(det(sigma1)) - d)
 
-    Parameters:
-    - mu1 (torch.Tensor): Mean vector of the first Gaussian
-      distribution (approximate posterior), shape (batch_size, d).
-    - sigma1 (torch.Tensor): Covariance matrix of the first Gaussian
-      distribution (approximate posterior), expected to be a diagonal
-      matrix represented as a tensor of shape (batch_size, d).
+    where ``d`` is the dimensionality of the latent space.
 
-    Returns:
-    - torch.Tensor: A tensor containing the KL divergence for each
-      instance in the batch, shape (batch_size,).
+    Parameters
+    ----------
+    mu1 : torch.Tensor of shape (batch_size, d)
+        Mean vector of the approximate posterior distribution.
+
+    sigma1 : torch.Tensor of shape (batch_size, d)
+        Diagonal of the covariance matrix of the approximate posterior.
+        Expected to contain positive values.
+
+    Returns
+    -------
+    kl_div : torch.Tensor of shape (batch_size,)
+        Per-sample KL divergence values.
     """
     d = sigma1.shape[1]  # Dimensionality of the latent space
     term1 = -torch.sum(
@@ -142,17 +142,12 @@ def kl_divergence_vae(
 class BaseGaussianFactorModel(ABC):
     def __init__(self, n_components=2):
         """
-        This is the base class of the model. Will never be called directly.
+        Base class for Gaussian factor models. Not intended to be instantiated directly.
 
         Parameters
         ----------
-        n_components : int,default=2
-            The latent dimensionality
-
-        Sets
-        ----
-        creationDate : datetime
-            The date/time that the object was created
+        n_components : int, default=2
+            The dimensionality of the latent space.
         """
         self.n_components = int(n_components)
         self.W_ = None
@@ -160,66 +155,68 @@ class BaseGaussianFactorModel(ABC):
     @abstractmethod
     def fit(self, *args, **kwargs):
         """
-        Fits a model given covariates X as well as option labels y in the
-        supervised methods
+        Fit the model to data.
+
+        Subclasses must implement this method. Supervised subclasses
+        additionally accept a label array ``y``.
 
         Parameters
         ----------
-        X : np.array-like,(n_samples,n_covariates)
-            The data
+        X : array-like of shape (n_samples, n_features)
+            Training data matrix.
 
-        other arguments
+        *args : additional positional arguments
+            Passed to the subclass implementation.
+
+        **kwargs : additional keyword arguments
+            Passed to the subclass implementation.
 
         Returns
         -------
         self : object
-            The model
+            Fitted estimator.
         """
 
     @abstractmethod
     def get_covariance(self) -> NDArray[np.float64]:
         """
-        Gets the covariance matrix defined by the model parameters
-
-        Parameters
-        ----------
-        None
+        Compute the covariance matrix implied by the fitted model parameters.
 
         Returns
         -------
-        covariance : np.array-like(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The model covariance matrix.
         """
 
     @abstractmethod
     def get_noise(self) -> NDArray[np.float64]:
         """
-        Returns the observational noise as a diagnoal matrix
-
-        Parameters
-        ----------
-        None
+        Return the observational noise as a diagonal matrix.
 
         Returns
         -------
-        Lambda : np.array-like(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            Diagonal noise matrix.
         """
 
     def get_precision(
         self, sherman_woodbury: bool = False
     ) -> NDArray[np.float64]:
         """
-        Gets the precision matrix defined as the inverse of the covariance
+        Compute the precision matrix (inverse of the covariance matrix).
 
         Parameters
         ----------
-        None
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury matrix identity for
+            efficient inversion, exploiting the low-rank-plus-diagonal
+            structure of the covariance. Requires ``self.get_noise()`` to
+            return a diagonal matrix.
 
         Returns
         -------
-        precision : np.array-like(p,p)
-            The inverse of the covariance matrix
+        precision : ndarray of shape (n_features, n_features)
+            The precision matrix, i.e. the inverse of the covariance matrix.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -232,18 +229,17 @@ class BaseGaussianFactorModel(ABC):
 
     def get_stable_rank(self) -> np.float64:
         """
-        Returns the stable rank defined as
-        ||A||_F^2/||A||^2
+        Compute the stable rank of the covariance matrix.
 
-        Parameters
-        ----------
-        None
+        The stable rank is defined as ``||A||_F^2 / ||A||_2^2``, i.e. the
+        ratio of the squared Frobenius norm to the squared spectral norm.
+        This provides a statistically robust approximation to the matrix rank.
+        See Vershynin, *High-Dimensional Probability* for a detailed discussion.
 
         Returns
         -------
         srank : np.float64
-            The stable rank. See Vershynin High dimensional probability for
-            discussion, but this is a statistically stable approximation to rank
+            The stable rank of the covariance matrix.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -252,17 +248,24 @@ class BaseGaussianFactorModel(ABC):
 
     def transform(self, X: NDArray[np.float64], sherman_woodbury: bool = False):
         """
-        This returns the latent variable estimates given X
+        Project data into the latent factor space.
+
+        Computes posterior mean estimates of the latent variables given
+        the observations ``X``.
 
         Parameters
         ----------
-        X : np array-like,(N_samples,p)
-            The data to transform.
+        X : ndarray of shape (n_samples, n_features)
+            Data matrix to transform.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity to exploit the
+            low-rank-plus-diagonal structure for efficient computation.
 
         Returns
         -------
-        S : NDArray,(N_samples,n_components)
-            The factor estimates
+        S : ndarray of shape (n_samples, n_components)
+            Estimated latent factor scores.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -286,21 +289,29 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ) -> NDArray[np.float64]:
         """
-        This returns the latent variable estimates given partial observations
-        contained in X
+        Project partially-observed data into the latent factor space.
+
+        Computes latent variable estimates using only the observed features
+        indicated by ``observed_feature_idxs``.
 
         Parameters
         ----------
-        X : NDArray,(N_samples,sum(observed_feature_idxs))
-            The data to transform.
+        X : ndarray of shape (n_samples, n_observed)
+            Data matrix containing only the observed features, where
+            ``n_observed = observed_feature_idxs.sum()``.
 
-        observed_feature_idxs: np.array-like,(sum(p),)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array indicating which features are
+            observed (value 1) versus missing (value 0).
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        S : NDArray,(N_samples,n_components)
-            The factor estimates
+        S : ndarray of shape (n_samples, n_components)
+            Estimated latent factor scores.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -326,25 +337,33 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ) -> np.float64:
         """
-        Returns the predictive log-likelihood of a subset of data.
+        Compute the weighted average conditional log-likelihood.
 
-        mean(log p(X[idx==1]|X[idx==0],covariance))
+        Evaluates ``mean(log p(X[idx==0] | X[idx==1], covariance))``
+        over all samples.
 
         Parameters
         ----------
-        X : NDArray,(N,sum(observed_feature_idxs))
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix (all features, both observed and
+            unobserved).
 
-        observed_feature_idxs: NDArray,(sum(p),)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 indicates an observed
+            feature and 0 indicates a missing feature.
 
-        weights : NDArray,(N,),default=None
-            The optional weights on the samples
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. If ``None``, all samples are weighted
+            equally. Weights are normalized to have mean 1.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        avg_score : float
-            Average log likelihood
+        avg_score : np.float64
+            Weighted average conditional log-likelihood.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -370,25 +389,28 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ) -> NDArray[np.float64]:
         """
-        Return the conditional log likelihood of each sample, that is
+        Compute the per-sample conditional log-likelihood.
 
-        log p(X[idx==1]|X[idx==0],covariance)
+        Evaluates ``log p(X[idx==0] | X[idx==1], covariance)`` for each
+        sample individually.
 
         Parameters
         ----------
-        X : np.array-like,(N,p)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix (all features).
 
-        observed_feature_idxs: np.array-like,(p,)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 indicates an observed
+            feature and 0 indicates a missing feature.
 
-        sherman_woodbury : bool,default=False
-            Whether to use the sherman_woodbury matrix identity
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury matrix identity for
+            efficient computation under low-rank-plus-diagonal covariance.
 
         Returns
         -------
-        scores : float
-            Log likelihood for each sample
+        scores : ndarray of shape (n_samples,)
+            Per-sample conditional log-likelihood values.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -411,23 +433,34 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ) -> np.float64:
         """
-        Returns the marginal log-likelihood of a subset of data
+        Compute the weighted average marginal log-likelihood of a feature subset.
+
+        Evaluates ``mean(log p(X[:, idx==1], covariance_sub))`` over all
+        samples, where the marginal distribution is derived from the model
+        covariance restricted to the observed features.
 
         Parameters
         ----------
-        X : np.array-like,(N,sum(idxs))
-            The data
+        X : ndarray of shape (n_samples, n_observed)
+            Data for the observed features only, where
+            ``n_observed = observed_feature_idxs.sum()``.
 
-        observed_feature_idxs: np.array-like,(sum(p),)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 indicates an observed
+            feature.
 
-        weights : np.array-like,(N,),default=None
-            The optional weights on the samples
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. If ``None``, all samples are weighted
+            equally.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        avg_score : float
-            Average log likelihood
+        avg_score : np.float64
+            Weighted average marginal log-likelihood.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -453,20 +486,26 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ):
         """
-        Returns the marginal log-likelihood of a subset of data
+        Compute the per-sample marginal log-likelihood of a feature subset.
 
         Parameters
         ----------
-        X : np.array-like,(N,sum(observed_feature_idxs))
-            The data
+        X : ndarray of shape (n_samples, n_observed)
+            Data for the observed features only, where
+            ``n_observed = observed_feature_idxs.sum()``.
 
-        observed_feature_idxs: np.array-like,(sum(p),)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 indicates an observed
+            feature.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        scores : float
-            Average log likelihood
+        scores : ndarray of shape (n_samples,)
+            Per-sample marginal log-likelihood values.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -486,20 +525,25 @@ class BaseGaussianFactorModel(ABC):
         sherman_woodbury: bool = False,
     ) -> np.float64:
         """
-        Returns the average log liklihood of data.
+        Compute the weighted average log-likelihood of the data.
 
         Parameters
         ----------
-        X : np.array-like,(N,sum(p))
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
 
-        weights : np.array-like,(N,),default=None
-            The optional weights on the samples
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. If ``None``, all samples are weighted
+            equally. Weights are normalized to have mean 1.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        avg_score : float
-            Average log likelihood
+        avg_score : np.float64
+            Weighted average log-likelihood.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -515,17 +559,21 @@ class BaseGaussianFactorModel(ABC):
         self, X: NDArray[np.float64], sherman_woodbury: bool = False
     ) -> NDArray[np.float64]:
         """
-        Return the log likelihood of each sample
+        Compute the per-sample log-likelihood.
 
         Parameters
         ----------
-        X : NDArray[np.float64],(N,sum(p))
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity for efficient
+            computation under low-rank-plus-diagonal covariance structure.
 
         Returns
         -------
-        scores : np.float64
-            Log likelihood for each sample
+        scores : ndarray of shape (n_samples,)
+            Per-sample log-likelihood values.
         """
         if self.W_ is None:
             raise ValueError("Model has not been fit yet")
@@ -537,17 +585,12 @@ class BaseGaussianFactorModel(ABC):
 
     def get_entropy(self) -> np.float64:
         """
-        Computes the entropy of a Gaussian distribution parameterized by
-        covariance.
-
-        Parameters
-        ----------
-        None
+        Compute the differential entropy of the model's Gaussian distribution.
 
         Returns
         -------
         entropy : np.float64
-            The differential entropy of the distribution
+            Differential entropy of the distribution in nats.
         """
         return _entropy(self.get_covariance())
 
@@ -555,18 +598,18 @@ class BaseGaussianFactorModel(ABC):
         self, observed_feature_idxs: NDArray[np.float64]
     ) -> np.float64:
         """
-        Computes the entropy of a subset of the Gaussian distribution
-        parameterized by covariance.
+        Compute the differential entropy of a marginal feature subset.
 
         Parameters
         ----------
-        observed_feature_idxs: NDArray[np.float64],(sum(p),)
-            The observation locations
+        observed_feature_idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 indicates the features
+            to include in the entropy computation.
 
         Returns
         -------
         entropy : np.float64
-            The differential entropy of the distribution
+            Differential entropy of the marginal distribution in nats.
         """
         return _entropy_subset(self.get_covariance(), observed_feature_idxs)
 
@@ -576,21 +619,25 @@ class BaseGaussianFactorModel(ABC):
         observed_feature_idxs2: NDArray[np.float64],
     ) -> np.float64:
         """
-        This computes the mutual information bewteen the two sets of
-        covariates based on the model.
+        Compute the mutual information between two groups of features.
+
+        Uses the fitted model covariance to compute the mutual information
+        ``I(X1 ; X2)`` based on the Gaussian entropy formula.
 
         Parameters
         ----------
-        observed_feature_idxs1 : np.array-like,(p,)
-            First group of variables
+        observed_feature_idxs1 : ndarray of shape (n_features,)
+            Boolean or integer index array selecting the first group of
+            features.
 
-        observed_feature_idxs2 : np.array-like,(p,)
-            Second group of variables
+        observed_feature_idxs2 : ndarray of shape (n_features,)
+            Boolean or integer index array selecting the second group of
+            features.
 
         Returns
         -------
         mutual_information : np.float64
-            The mutual information between the two variables
+            Mutual information between the two feature groups in nats.
         """
         covariance = self.get_covariance()
         return _mutual_information(
@@ -606,25 +653,23 @@ class BasePCASGDModel(BaseGaussianFactorModel):
         prior_options: dict[str, Any] | None = None,
     ) -> None:
         """
-        This is the base class of models that use stochastic
-        gradient descent for inference. This reduces boilerplate code
-        associated with some of the standard methods etc.
+        Base class for factor models fitted via stochastic gradient descent.
+
+        Provides shared infrastructure (loss tracking, device handling,
+        optimizer setup) for SGD-based Gaussian factor models.
 
         Parameters
         ----------
-        n_components : int,default=2
-            The latent dimensionality
+        n_components : int, default=2
+            The dimensionality of the latent space.
 
-        training_options : dict,default={}
-            The options for gradient descent
+        training_options : dict, default=None
+            Options for stochastic gradient descent. Keys and defaults are
+            set by ``_fill_training_options``.
 
-        prior_options : dict,default={}
-            The options for priors on model parameters
-
-        Sets
-        ----
-        creationDate : datetime
-            The date/time that the object was created
+        prior_options : dict, default=None
+            Options for the prior on model parameters. Keys and defaults
+            are set by ``_fill_prior_options`` in the subclass.
         """
         super().__init__(n_components=n_components)
 
@@ -640,31 +685,33 @@ class BasePCASGDModel(BaseGaussianFactorModel):
         self, training_options: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        This sets the default parameters for stochastic gradient descent,
-        our inference strategy for the model.
+        Fill in default training options for stochastic gradient descent.
+
+        Merges user-supplied options with defaults. Raises ``ValueError``
+        if any unrecognized keys are present.
 
         Parameters
         ----------
         training_options : dict
-            The original options set by the user passed as a dictionary
+            User-supplied training options. Recognized keys:
 
-        Options
+            - ``n_iterations`` : int, default=3000
+                Number of SGD iterations.
+            - ``learning_rate`` : float, default=1e-2
+                Step size for the optimizer.
+            - ``use_gpu`` : bool, default=True
+                Whether to use a GPU if available.
+            - ``method`` : str, default='Nadam'
+                Optimization algorithm name.
+            - ``batch_size`` : int, default=100
+                Mini-batch size per iteration.
+            - ``momentum`` : float, default=0.9
+                Momentum coefficient for the SGD optimizer.
+
+        Returns
         -------
-        n_iterations : int, default=3000
-            Number of iterations to train using stochastic gradient descent
-
-        learning_rate : float, default=1e-4
-            Learning rate of gradient descent
-
-        method : string {'Nadam'}, default='Nadam'
-            The learning algorithm
-
-        batch_size : int, default=None
-            The number of observations to use at each iteration. If none
-            corresponds to batch learning
-
-        gpu_memory : int, default=1024
-            The amount of memory you wish to use during training
+        tops : dict
+            Merged dictionary of training options with defaults applied.
         """
         default_options = {
             "n_iterations": 3000,
@@ -688,19 +735,20 @@ class BasePCASGDModel(BaseGaussianFactorModel):
 
     def _initialize_save_losses(self) -> None:
         """
-        This method initializes the arrays to track relevant variables
-        during training at each iteration
+        Initialize arrays to record training losses at each iteration.
 
-        Sets
-        ----
-        losses_likelihood : np.array(n_iterations)
-            The log likelihood
+        Sets the following attributes:
 
-        losses_prior : np.array(n_iterations)
-            The log prior
+        Attributes
+        ----------
+        losses_likelihood : ndarray of shape (n_iterations,)
+            Per-iteration log-likelihood values.
 
-        losses_posterior : np.array(n_iterations)
-            The log posterior
+        losses_prior : ndarray of shape (n_iterations,)
+            Per-iteration log-prior values.
+
+        losses_posterior : ndarray of shape (n_iterations,)
+            Per-iteration log-posterior values.
         """
         n_iterations = self.training_options["n_iterations"]
         self.losses_likelihood = np.empty(n_iterations)
@@ -716,24 +764,24 @@ class BasePCASGDModel(BaseGaussianFactorModel):
         log_posterior: Tensor,
     ) -> None:
         """
-        Saves the values of the losses at each iteration
+        Record training loss values for the current iteration.
 
         Parameters
-        -----------
-        device ; pytorch.device
-            The device used for trainging (gpu or cpu)
-
+        ----------
         i : int
-            Current training iteration
+            Current training iteration index.
 
-        losses_likelihood : Tensor
-            The log likelihood
+        device : Any
+            PyTorch device (CPU or CUDA) used during training.
 
-        losses_prior : Tensor | NDArray[np.float64]
-            The log prior
+        log_likelihood : Tensor
+            Log-likelihood value at iteration ``i``.
 
-        losses_posterior : Tensor
-            The log posterior
+        log_prior : Tensor or ndarray of shape ()
+            Log-prior value at iteration ``i``.
+
+        log_posterior : Tensor
+            Log-posterior value at iteration ``i``.
         """
         if device.type == "cuda":
             self.losses_likelihood[i] = log_likelihood.detach().cpu().numpy()
@@ -754,7 +802,20 @@ class BasePCASGDModel(BaseGaussianFactorModel):
         self, device: Any, *args: NDArray
     ) -> list[Tensor]:
         """
-        Convert a list of numpy arrays to tensors
+        Convert numpy arrays to float32 PyTorch tensors on the target device.
+
+        Parameters
+        ----------
+        device : Any
+            PyTorch device (CPU or CUDA) to place the tensors on.
+
+        *args : ndarray
+            One or more numpy arrays to convert.
+
+        Returns
+        -------
+        out : list of Tensor
+            Tensors corresponding to each input array, cast to float32.
         """
         out = []
         for arg in args:
@@ -764,15 +825,16 @@ class BasePCASGDModel(BaseGaussianFactorModel):
     @abstractmethod
     def _create_prior(self, device: Any):
         """
-        Creates a prior on the parameters taking your trainable variable
-        dictionary as input
+        Construct the log-prior function for the model parameters.
 
         Parameters
         ----------
-        None
+        device : Any
+            PyTorch device (CPU or CUDA) on which to place prior tensors.
 
         Returns
         -------
-        log_prior : function
-            The function representing the negative log density of the prior
+        log_prior : callable
+            A function that accepts the list of trainable variable tensors
+            and returns a scalar Tensor representing the log-prior density.
         """

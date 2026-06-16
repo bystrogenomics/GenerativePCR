@@ -31,30 +31,30 @@ from ._base_covariance import (
 class EmpiricalCovariance(BaseCovariance):
     def __init__(self):
         """
-        This object just fits the covariance matrix as the standard sample
-        covariance matrix. Does not handle missing values
+        Fit the standard sample covariance matrix.
+
+        Does not handle missing values. Computes ``X.T @ X / N``.
         """
         super().__init__()
 
     def fit(self, X: NDArray) -> "EmpiricalCovariance":
         """
-        This fits a covariance matrix using samples X.
+        Fit the empirical covariance matrix from data.
 
         Parameters
         ----------
-        X : np.array-like,(n_samples,n_covariates)
-            The centered data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix. Must not contain NaN values.
 
         Returns
         -------
         self : EmpiricalCovariance
-            The model
+            Fitted estimator.
 
         Raises
         ------
-        ValueError:
-            A value error will be raised if missing data is found in X (
-            np.isnan(X) evaluates to true ), or if X is not an NDArray
+        ValueError
+            If ``X`` is not a numpy array or contains NaN values.
         """
         self._test_inputs(X)
         self.N, self.p = X.shape
@@ -68,8 +68,8 @@ class EmpiricalCovariance(BaseCovariance):
 class BayesianCovariance(BaseCovariance):
     def __init__(self, prior_options=None):
         """
-        This object fits the covariance matrix as the MAP estimator using
-        user-defined priors. Does not handle missing values
+        Fit the covariance matrix as a MAP estimator with an
+        inverse-Wishart prior. Does not handle missing values.
         """
         super().__init__()
         if prior_options is None:
@@ -79,23 +79,22 @@ class BayesianCovariance(BaseCovariance):
 
     def fit(self, X: NDArray[np.float_]) -> "BayesianCovariance":
         """
-        This fits a covariance matrix using samples X with MAP estimation.
+        Fit the MAP covariance estimate using an inverse-Wishart prior.
 
         Parameters
         ----------
-        X : np.array-like,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The data matrix. Must not contain NaN values.
 
         Returns
         -------
         self : BayesianCovariance
-            The model
+            Fitted estimator.
 
         Raises
         ------
-        ValueError:
-            A value error will be raised if missing data is found in X (
-            np.isnan(X) evaluates to true ), or if X is not an NDArray
+        ValueError
+            If ``X`` is not a numpy array or contains NaN values.
         """
         self._test_inputs(X)
         self.N, self.p = X.shape
@@ -116,18 +115,25 @@ class BayesianCovariance(BaseCovariance):
         self, prior_options: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        This sets the prior options for our inference scheme
+        Fill in default prior options for MAP estimation.
 
         Parameters
         ----------
         prior_options : dict
-            The original prior options passed as a dictionary
+            User-supplied prior options. Recognized keys:
 
-        Options
+            - ``iw_params`` : dict, default ``{'pnu': 2, 'sigma': 1.0}``
+                Parameters for the inverse-Wishart prior:
+
+                - ``pnu`` : int — excess degrees of freedom above ``p``
+                  (total ``nu = p + pnu``).
+                - ``sigma`` : float > 0 — scale of the prior covariance
+                  ``cov = sigma * I_p``.
+
+        Returns
         -------
-        iw_params : dict,default={'pnu':2,'sigma':1.0}
-            pnu : int - nu = p + pnu
-            sigma : float>0 - cov = sigma*I_p
+        options : dict
+            Merged dictionary of prior options with defaults applied.
         """
         default_options = {
             "iw_params": {"pnu": 2, "sigma": 1.0},

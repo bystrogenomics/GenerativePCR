@@ -40,28 +40,27 @@ from .ppca_augmented import PPCAsupervisedRandomized
 
 def _get_projection_matrix(W_: Tensor, sigma_: Tensor):
     """
-    This is currently just implemented for PPCA due to nicer formula. Will
-    modify for broader application later.
+    Compute the posterior parameters of the latent distribution p(S|X).
 
-    Computes the parameters for p(S|X)
-
-    Description in future to be released paper
+    Currently implemented only for PPCA due to its closed-form expression.
+    Computes the projection matrix and posterior covariance via the matrix
+    M = W W^T + sigma * I.
 
     Parameters
     ----------
-    W_ : Tensor(n_components,p)
-        The loadings
+    W_ : Tensor of shape (n_components, p)
+        The factor loadings matrix.
 
     sigma_ : Tensor
-        Isotropic noise
+        Scalar isotropic noise variance.
 
     Returns
     -------
-    Proj_X : Tensor(n_components,p)
-        Beta such that np.dot(Proj_X, X) = E[S|X]
+    Proj_X : Tensor of shape (n_components, p)
+        Projection matrix such that ``Proj_X @ X`` gives ``E[S|X]``.
 
-    Cov : Tensor(n_components,n_components)
-        Var(S|X)
+    Cov : Tensor of shape (n_components, n_components)
+        Posterior covariance ``Var(S|X)``.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_components = int(W_.shape[0])
@@ -190,31 +189,33 @@ class GPCRvi(PPCA):
         seed: int = 2021,
     ) -> "GPCRvi":
         """
-        Fits a model given covariates X as well as option labels y in the
-        supervised methods
+        Fit the GPCRvi model to data with a supervised auxiliary task.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered covariate matrix.
 
-        y : NDArray,(n_samples,n_prediction)
-            Covariates we wish to predict. For now lazy and assuming
-            logistic regression.
+        y : ndarray of shape (n_samples,) or (n_samples, n_outputs)
+            Supervised labels or continuous targets to predict from the
+            first ``n_supervised`` latent dimensions.
 
-        task : string,default='classification'
-            Is this prediction, multinomial regression, or classification
+        task : str, default='classification'
+            The prediction task type. One of:
 
-        progress_bar : bool,default=True
-            Whether to print the progress bar to monitor time
+            - ``'classification'`` — binary classification via logistic loss.
+            - ``'regression'`` — continuous regression via MSE loss.
 
-        seed : int,default=2021
-            The random number generator seed used to ensure reproducibility
+        progress_bar : bool, default=True
+            Whether to display a tqdm progress bar during training.
+
+        seed : int, default=2021
+            Seed for the random number generator used for mini-batch sampling.
 
         Returns
         -------
         self : GPCRvi
-            The model
+            Fitted estimator.
         """
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -406,27 +407,26 @@ class GPCRvi(PPCA):
 
     def _store_instance_variables(self, trainable_variables: list[Tensor]):
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of saved variables of type Tensor
+        trainable_variables : list of Tensor
+            Tensors ``[W_, sigmal_, d_weights, d_bias]`` after optimization.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_components, n_features)
+            Fitted factor loadings.
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
 
-        d_weights_ : NDArray,(n_supervised,)
-            The learned predictive coefficients
+        d_weights_ : ndarray of shape (n_supervised,)
+            Learned predictive weight vector.
 
-        d_bias_ : NDArray,(1,)
-            The learned predictive bias
-
+        d_bias_ : ndarray of shape (1,)
+            Learned predictive bias term.
         """
         self.W_ = trainable_variables[0].detach().cpu().numpy()
         self.sigma2_ = (
@@ -437,23 +437,28 @@ class GPCRvi(PPCA):
 
     def _initialize_variables(self, X: NDArray, Y: NDArray):
         """
-        Initializes the variables of the model. Right now fits a PCA model
-        in sklearn, uses the loadings and sets sigma^2 to be unexplained
-        variance.
+        Initialize model parameters using a supervised warm start.
+
+        Fits a ``PPCAsupervisedRandomized`` model with high supervision
+        strength to obtain a good initial loading for the first latent
+        dimension, then fills remaining components with PCA loadings.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,p)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
+
+        Y : ndarray of shape (n_samples, 1)
+            The supervised targets used to orient the first latent dimension.
 
         Returns
         -------
-        W_ : torch.tensor,shape=(n_components,p)
-            The loadings of our latent factor model
+        W_ : Tensor of shape (n_components, n_features)
+            Initial loadings tensor with ``requires_grad=True``.
 
-        sigmal_ : torch.tensor
-            The unrectified variance of the model
-
+        sigmal_ : Tensor of shape (1,)
+            Initial unrectified isotropic noise variance with
+            ``requires_grad=True``.
         """
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = PPCAsupervisedRandomized(n_components=1, mu=100000.0)
@@ -480,7 +485,21 @@ class GPCRvi(PPCA):
 
     def _test_inputs(self, X, y):
         """
-        Just tests to make sure data is numpy array and dimensions match
+        Validate inputs before fitting.
+
+        Parameters
+        ----------
+        X : ndarray
+            The covariate data.
+
+        y : array-like
+            The supervised labels.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` is not a numpy array, the batch size exceeds the number
+            of samples, or the lengths of ``X`` and ``y`` do not match.
         """
         if not isinstance(X, np.ndarray):
             raise ValueError("Data must be numpy array")
@@ -492,12 +511,17 @@ class GPCRvi(PPCA):
 
     def _create_prior(self):
         """
-        This creates the function representing prior on pararmeters
+        Construct the log-prior function for GPCRvi parameters.
 
-        Parameters
-        ----------
-        log_prior : function
-            The function representing the log density of the prior
+        Creates a closure over ``prior_options`` that computes the
+        log-prior on ``W_`` (Gaussian regularization) and ``sigma``
+        (Gamma prior on the noise variance).
+
+        Returns
+        -------
+        log_prior : callable
+            Function that accepts the list of trainable variable tensors
+            and returns a scalar Tensor of the log-prior value.
         """
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         prior_options = self.prior_options
@@ -528,21 +552,21 @@ class GPCRvi(PPCA):
         log_posterior,
     ) -> None:
         """
-        Saves the values of the losses at each iteration
+        Record training loss values for the current iteration.
 
         Parameters
-        -----------
+        ----------
         i : int
-            Current training iteration
+            Current training iteration index.
 
-        losses_likelihood : Tensor
-            The log likelihood
+        log_likelihood : Tensor
+            Log-likelihood value at iteration ``i``.
 
-        losses_prior : NDArray[np.float_] | Tensor
-            The log prior
+        log_prior : Tensor or ndarray
+            Log-prior value at iteration ``i``.
 
-        losses_posterior : Tensor
-            The log posterior
+        log_posterior : Tensor
+            Log-posterior value at iteration ``i``.
         """
         self.losses_likelihood[i] = log_likelihood.detach().cpu().numpy()
         if isinstance(log_prior, Tensor):
