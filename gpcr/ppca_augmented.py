@@ -81,20 +81,20 @@ class PPCAadversarial(BasePPCAAugmented):
         self, X: NDArray[np.float_], Y: NDArray[np.float_]
     ) -> "PPCAadversarial":
         """
-        Fits a model given covariates X
+        Fit the adversarial PPCA model.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
 
-        Y : NDArray,(n_samples,n_confounders)
-            The concommitant data we want to remove
+        Y : ndarray of shape (n_samples, n_confounders)
+            The confounder data to decorrelate from the latent representation.
 
         Returns
         -------
         self : PPCAadversarial
-            The model
+            Fitted estimator.
         """
         self.mean_x = np.mean(X, axis=0)
         self.mean_y = np.mean(Y, axis=0)
@@ -145,18 +145,14 @@ class PPCAadversarial(BasePPCAAugmented):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        The covariance is given by ``Sigma = W^T W + sigma^2 * I``.
 
         Returns
         -------
-        covariance : NDArray,(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The PPCA covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -165,16 +161,14 @@ class PPCAadversarial(BasePPCAAugmented):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA-based models the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -188,20 +182,23 @@ class PPCAadversarial(BasePPCAAugmented):
         ],
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of variables saved
+        trainable_variables : tuple
+            A 3-tuple ``(W, sigma2, D)`` of fitted variables.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_features, n_components)
+            Fitted factor loadings (transposed for storage).
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
+
+        D_ : ndarray of shape (n_confounders, n_components)
+            Fitted adversarial weight matrix (transposed for storage).
         """
         self.W_ = trainable_variables[0].T
         self.sigma2_ = trainable_variables[1]
@@ -277,20 +274,20 @@ class PPCAsupervised(BasePPCAAugmented):
         self, X: NDArray[np.float_], Y: NDArray[np.float_]
     ) -> "PPCAsupervised":
         """
-        Fits a model given covariates X
+        Fit the supervised PPCA model.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
 
-        Y : NDArray,(n_samples,n_predicted)
-            The data we want to predict
+        Y : ndarray of shape (n_samples, n_targets)
+            The target data to predict from the latent representation.
 
         Returns
         -------
-        self : PPCAadversarial
-            The model
+        self : PPCAsupervised
+            Fitted estimator.
         """
         self.mean_x = np.mean(X, axis=0)
         self.mean_y = np.mean(Y, axis=0)
@@ -341,18 +338,14 @@ class PPCAsupervised(BasePPCAAugmented):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        The covariance is given by ``Sigma = W^T W + sigma^2 * I``.
 
         Returns
         -------
-        covariance : NDArray,(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The PPCA covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -361,16 +354,14 @@ class PPCAsupervised(BasePPCAAugmented):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA-based models the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -384,20 +375,23 @@ class PPCAsupervised(BasePPCAAugmented):
         ],
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of variables saved
+        trainable_variables : tuple
+            A 3-tuple ``(W, sigma2, Phi)`` of fitted variables.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_features, n_components)
+            Fitted factor loadings (transposed for storage).
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
+
+        Phi_ : ndarray of shape (n_targets, n_components)
+            Fitted predictive weight matrix (transposed for storage).
         """
         self.W_ = trainable_variables[0].T
         self.sigma2_ = trainable_variables[1]
@@ -478,23 +472,23 @@ class PPCASupAdversarial(BasePPCAAugmented):
         Z: NDArray[np.float_],
     ) -> "PPCASupAdversarial":
         """
-        Fits a model given covariates X
+        Fit the simultaneous supervised and adversarial PPCA model.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
 
-        Y : NDArray,(n_samples,n_predictors)
-            The data we want to predict
+        Y : ndarray of shape (n_samples, n_targets)
+            The target data to predict from the latent representation.
 
-        Z : NDArray,(n_samples,n_confounders)
-            The concommitant data we want to remove
+        Z : ndarray of shape (n_samples, n_confounders)
+            The confounder data to decorrelate from the latent representation.
 
         Returns
         -------
-        self : PPCA_sup_adversarial
-            The model
+        self : PPCASupAdversarial
+            Fitted estimator.
         """
         self.mean_x = np.mean(X, axis=0)
         self.mean_y = np.mean(Y, axis=0)
@@ -567,18 +561,14 @@ class PPCASupAdversarial(BasePPCAAugmented):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        The covariance is given by ``Sigma = W^T W + sigma^2 * I``.
 
         Returns
         -------
-        covariance : NDArray,(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The PPCA covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -587,16 +577,14 @@ class PPCASupAdversarial(BasePPCAAugmented):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA-based models the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -613,20 +601,23 @@ class PPCASupAdversarial(BasePPCAAugmented):
         ],
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of variables saved
+        trainable_variables : tuple
+            A 4-tuple ``(W, sigma2, D1, D2)`` of fitted variables.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_features, n_components)
+            Fitted factor loadings (transposed for storage).
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
+
+        D_ : ndarray of shape (n_targets, n_components)
+            Fitted predictive weight matrix (transposed for storage).
         """
         self.W_ = trainable_variables[0].T
         self.sigma2_ = trainable_variables[1]
@@ -650,8 +641,25 @@ class PPCASupAdversarial(BasePPCAAugmented):
 
 def _select_covariance_estimator(regularization):
     """
-    This is a tiny method for selecting the estimator for the covariance
-    matrix.
+    Instantiate a covariance estimator by name.
+
+    Parameters
+    ----------
+    regularization : str
+        Name of the covariance estimation method. One of:
+        ``'Empirical'``, ``'Linear'``, ``'LinearInverse'``,
+        ``'QuadraticInverse'``, ``'GeometricInverse'``, ``'NonLinear'``.
+
+    Returns
+    -------
+    model_cov : BaseCovariance
+        An unfitted covariance estimator instance.
+
+    Raises
+    ------
+    ValueError
+        If ``'Bayesian'`` is requested (currently unsupported) or if
+        ``regularization`` is not a recognized string.
     """
     model_cov: Union[
         EmpiricalCovariance,
@@ -705,20 +713,24 @@ class PPCAadversarialRandomized(BasePPCAAugmented):
         self, X: NDArray[np.float_], Y: NDArray[np.float_]
     ) -> "PPCAadversarialRandomized":
         """
-        Fits a model given covariates X
+        Fit the randomized adversarial PPCA model.
+
+        Uses a randomized range finder to project to a low-dimensional
+        subspace before fitting, reducing computation for high-dimensional
+        data.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
 
-        Y : NDArray,(n_samples,n_confounders)
-            The concommitant data we want to remove
+        Y : ndarray of shape (n_samples, n_confounders)
+            The confounder data to decorrelate from the latent representation.
 
         Returns
         -------
-        self : PPCAadversarial
-            The model
+        self : PPCAadversarialRandomized
+            Fitted estimator.
         """
         self.mean_x = np.mean(X, axis=0)
         self.mean_y = np.mean(Y, axis=0)
@@ -786,18 +798,17 @@ class PPCAadversarialRandomized(BasePPCAAugmented):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        Uses the explained variance to reconstruct the PPCA-style
+        covariance: ``Sigma = W_mod W_mod^T + sigma^2 * I``, where
+        ``W_mod`` scales the loadings by the square root of the
+        explained-minus-noise variance.
 
         Returns
         -------
-        covariance : NDArray,(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The model covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -808,16 +819,14 @@ class PPCAadversarialRandomized(BasePPCAAugmented):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA-based models the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -832,20 +841,20 @@ class PPCAadversarialRandomized(BasePPCAAugmented):
         ],
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of variables saved
+        trainable_variables : tuple
+            A 2-tuple ``(W, sigma2)`` of fitted variables.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_features, n_components)
+            Fitted factor loadings (transposed for storage).
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
         """
         self.W_ = trainable_variables[0].T
         self.sigma2_ = trainable_variables[1]
@@ -891,20 +900,24 @@ class PPCAsupervisedRandomized(BasePPCAAugmented):
         self, X: NDArray[np.float_], Y: NDArray[np.float_]
     ) -> "PPCAsupervisedRandomized":
         """
-        Fits a model given covariates X
+        Fit the randomized supervised PPCA model.
+
+        Uses a randomized range finder to project to a low-dimensional
+        subspace before fitting, reducing computation for high-dimensional
+        data.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The covariate data.
 
-        Y : NDArray,(n_samples,n_confounders)
-            The concommitant data we want to remove
+        Y : ndarray of shape (n_samples, n_targets)
+            The target data to predict from the latent representation.
 
         Returns
         -------
-        self : PPCAadversarial
-            The model
+        self : PPCAsupervisedRandomized
+            Fitted estimator.
         """
         self.mean_x = np.mean(X, axis=0)
         self.mean_y = np.mean(Y, axis=0)
@@ -972,18 +985,17 @@ class PPCAsupervisedRandomized(BasePPCAAugmented):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        Uses the explained variance to reconstruct the PPCA-style
+        covariance: ``Sigma = W_mod W_mod^T + sigma^2 * I``, where
+        ``W_mod`` scales the loadings by the square root of the
+        explained-minus-noise variance.
 
         Returns
         -------
-        covariance : NDArray,(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The model covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -994,16 +1006,14 @@ class PPCAsupervisedRandomized(BasePPCAAugmented):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA-based models the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Model has not been fit yet")
@@ -1018,20 +1028,20 @@ class PPCAsupervisedRandomized(BasePPCAAugmented):
         ],
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of variables saved
+        trainable_variables : tuple
+            A 2-tuple ``(W, sigma2)`` of fitted variables.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_features, n_components)
+            Fitted factor loadings (transposed for storage).
 
         sigma2_ : float
-            The isotropic variance
+            Fitted isotropic noise variance.
         """
         self.W_ = trainable_variables[0].T
         self.sigma2_ = trainable_variables[1]

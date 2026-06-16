@@ -44,28 +44,28 @@ class PPCA(BasePCASGDModel):
         sherman_woodbury: bool = False,
     ) -> "PPCA":
         """
-        Fits a model given covariates X as well as option labels y in the
-        supervised methods
+        Fit the PPCA model to data using stochastic gradient descent.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
 
-        progress_bar : bool,default=True
-            Whether to print the progress bar to monitor time
+        progress_bar : bool, default=True
+            Whether to display a tqdm progress bar during training.
 
-        seed : int,default=2021
-            The seed of the random number generator
+        seed : int, default=2021
+            Seed for the random number generator used for mini-batch sampling.
 
-        sherman_woodbury : bool,default=False
-            Whether to use the Sherman Woodbury identity to calculate
-            the likelihood. Advantageous in high-p situations
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity to evaluate the
+            log-likelihood, which is advantageous when ``n_features`` is
+            large relative to ``n_components``.
 
         Returns
         -------
         self : PPCA
-            The model
+            Fitted estimator.
         """
         self._test_inputs(X)
         training_options = self.training_options
@@ -138,18 +138,14 @@ class PPCA(BasePCASGDModel):
 
     def get_covariance(self):
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        The covariance is given by ``Sigma = W^T W + sigma^2 * I``.
 
         Returns
         -------
-        covariance : NDArray(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The PPCA covariance matrix.
         """
         if self.W_ is None or self.sigma2_ is None or self.p is None:
             raise ValueError("Fit model first")
@@ -158,16 +154,14 @@ class PPCA(BasePCASGDModel):
 
     def get_noise(self):
         """
-        Returns the observational noise as a diagonal matrix
+        Return the observational noise as a diagonal matrix.
 
-        Parameters
-        ----------
-        None
+        For PPCA the noise is isotropic: ``Lambda = sigma^2 * I``.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            The isotropic diagonal noise matrix.
         """
         if self.sigma2_ is None or self.p is None:
             raise ValueError("Fit model first")
@@ -176,12 +170,22 @@ class PPCA(BasePCASGDModel):
 
     def _create_prior(self, device):
         """
-        This creates the function representing prior on pararmeters
+        Construct the log-prior function for PPCA parameters.
+
+        Creates a closure over ``prior_options`` that computes the
+        log-prior on ``W_`` (Gaussian regularization) and ``sigma``
+        (Gamma prior on the noise variance).
 
         Parameters
         ----------
-        log_prior : function
-            The function representing the log density of the prior
+        device : Any
+            PyTorch device (CPU or CUDA) on which to place prior tensors.
+
+        Returns
+        -------
+        log_prior : callable
+            Function that accepts the list of trainable variable tensors
+            and returns a scalar Tensor of the log-prior value.
         """
         prior_options = self.prior_options
 
@@ -207,25 +211,27 @@ class PPCA(BasePCASGDModel):
         self, device: Any, X: NDArray[np.float_]
     ) -> tuple[Tensor, Tensor]:
         """
-        Initializes the variables of the model. Right now fits a PCA model
-        in sklearn, uses the loadings and sets sigma^2 to be unexplained
-        variance.
+        Initialize model parameters from a sklearn PCA warm start.
+
+        Fits a PCA model to ``X``, uses its loadings as ``W_``, and sets
+        the initial noise ``sigma^2`` to the mean squared reconstruction
+        error.
 
         Parameters
         ----------
-        device ; pytorch.device
-            The device used for trainging (gpu or cpu)
+        device : Any
+            PyTorch device (CPU or CUDA) on which to place the tensors.
 
-        X : NDArray,(n_samples,p)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The training data.
 
         Returns
         -------
-        W_ : torch.tensor,shape=(n_components,p)
-            The loadings of our latent factor model
+        W_ : Tensor of shape (n_components, n_features)
+            Initial loadings tensor with ``requires_grad=True``.
 
-        sigmal_ : torch.tensor
-            The unrectified variance of the model
+        sigmal_ : Tensor of shape (1,)
+            Initial unrectified noise variance with ``requires_grad=True``.
         """
         model = PCA(self.n_components)
         S_hat = model.fit_transform(X)
@@ -241,20 +247,23 @@ class PPCA(BasePCASGDModel):
         self, device: Any, trainable_variables: list[Tensor]
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list[Tensor]
-            List of tensorflow variables saved
+        device : Any
+            PyTorch device used during training.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        trainable_variables : list of Tensor
+            Tensors ``[W_, sigmal_]`` after optimization.
+
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_components, n_features)
+            Fitted factor loadings.
 
         sigma2_ : np.float_
-            The isotropic variance
+            Fitted isotropic noise variance.
         """
         if device.type == "cuda":
             self.W_ = trainable_variables[0].detach().cpu().numpy()
@@ -269,7 +278,18 @@ class PPCA(BasePCASGDModel):
 
     def _test_inputs(self, X: NDArray[np.float_]) -> None:
         """
-        Just tests to make sure data is numpy array
+        Validate inputs before fitting.
+
+        Parameters
+        ----------
+        X : ndarray
+            The training data.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` is not a numpy array or the batch size exceeds the
+            number of samples.
         """
         if not isinstance(X, np.ndarray):
             raise ValueError("Data is numpy array")
@@ -280,12 +300,24 @@ class PPCA(BasePCASGDModel):
         self, prior_options: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Fills in options for prior parameters
+        Fill in default prior options for PPCA parameters.
 
-        Paramters
-        ---------
-        new_dict : dictionary
-            The prior parameters used to specify the prior
+        Parameters
+        ----------
+        prior_options : dict
+            User-supplied prior options. Recognized keys:
+
+            - ``weight_W`` : float, default=0.01
+                L2 regularization weight on the loadings ``W``.
+            - ``alpha`` : float, default=3.0
+                Shape parameter of the Gamma prior on the noise variance.
+            - ``beta`` : float, default=3.0
+                Rate parameter of the Gamma prior on the noise variance.
+
+        Returns
+        -------
+        options : dict
+            Merged dictionary of prior options with defaults applied.
         """
         default_dict = {"weight_W": 0.01, "alpha": 3.0, "beta": 3.0}
 
@@ -300,20 +332,22 @@ class FactorAnalysis(BasePCASGDModel):
         training_options: dict | None = None,
     ):
         """
-        This implements factor analysis which allows for each covariate to
-        have it's own isotropic noise. No analytic solution that I know of
-        but fortunately with SGD it doesn't matter.
+        Factor analysis with heterogeneous diagonal noise per feature.
+
+        Each feature is given its own noise variance, unlike PPCA which
+        uses a single isotropic noise parameter.
 
         Parameters
         ----------
-        n_components : int,default=2
-            The latent dimensionality
+        n_components : int, default=2
+            The dimensionality of the latent space.
 
-        training_options : dict,default={}
-            The options for gradient descent
+        training_options : dict, default=None
+            Options for gradient descent passed to ``_fill_training_options``.
 
-        prior_options : dict,default={}
-            The options for priors on model parameters
+        prior_options : dict, default=None
+            Options for priors on model parameters passed to
+            ``_fill_prior_options``.
         """
         super().__init__(
             n_components=n_components,
@@ -336,17 +370,27 @@ class FactorAnalysis(BasePCASGDModel):
         sherman_woodbury: bool = False,
     ) -> "FactorAnalysis":
         """
-        Fits a model given covariates X
+        Fit the factor analysis model to data using stochastic gradient descent.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,n_covariates)
-            The data
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        progress_bar : bool, default=True
+            Whether to display a tqdm progress bar during training.
+
+        seed : int, default=2021
+            Seed for the random number generator used for mini-batch sampling.
+
+        sherman_woodbury : bool, default=False
+            If ``True``, uses the Sherman-Woodbury identity to evaluate the
+            log-likelihood.
 
         Returns
         -------
         self : FactorAnalysis
-            The model
+            Fitted estimator.
         """
         self._test_inputs(X)
         training_options = self.training_options
@@ -413,18 +457,14 @@ class FactorAnalysis(BasePCASGDModel):
 
     def get_covariance(self) -> NDArray[np.float_]:
         """
-        Gets the covariance matrix
+        Compute the model covariance matrix.
 
-        Sigma = W^TW + sigma2*I
-
-        Parameters
-        ----------
-        None
+        The covariance is given by ``Sigma = W^T W + diag(sigmas)``.
 
         Returns
         -------
-        covariance : NDArray(p,p)
-            The covariance matrix
+        covariance : ndarray of shape (n_features, n_features)
+            The factor analysis covariance matrix.
         """
         if self.W_ is None or self.sigmas_ is None:
             raise ValueError("Fit model first")
@@ -433,16 +473,12 @@ class FactorAnalysis(BasePCASGDModel):
 
     def get_noise(self) -> NDArray[np.float_]:
         """
-        Returns the observational noise as a diagonal matrix
-
-        Parameters
-        ----------
-        None
+        Return the observational noise as a diagonal matrix.
 
         Returns
         -------
-        Lambda : NDArray,(p,p)
-            The observational noise
+        Lambda : ndarray of shape (n_features, n_features)
+            Diagonal noise matrix ``diag(sigmas_)``.
         """
         if self.sigmas_ is None:
             raise ValueError("Fit model first")
@@ -451,12 +487,21 @@ class FactorAnalysis(BasePCASGDModel):
 
     def _create_prior(self, device) -> Callable[[list[Tensor]], Tensor]:
         """
-        This creates the function representing prior on pararmeters
+        Construct the log-prior function for factor analysis parameters.
+
+        Creates a closure that computes a Gamma log-prior on the
+        (softmax-transformed) per-feature noise variances.
 
         Parameters
         ----------
-        log_prior : function
-            The function representing the negative log density of the prior
+        device : Any
+            PyTorch device (CPU or CUDA) on which to place prior tensors.
+
+        Returns
+        -------
+        log_prior : callable
+            Function that accepts the list of trainable variable tensors
+            and returns a scalar Tensor of the log-prior value.
         """
 
         def log_prior(trainable_variables: list[Tensor]) -> Tensor:
@@ -473,33 +518,50 @@ class FactorAnalysis(BasePCASGDModel):
         self, prior_options: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Fills in options for prior parameters
+        Fill in default prior options for factor analysis parameters.
 
-        Paramters
-        ---------
-        new_dict : dictionary
-            The prior parameters used to specify the prior
+        Parameters
+        ----------
+        prior_options : dict
+            User-supplied prior options. Recognized keys:
+
+            - ``alpha`` : float, default=3.0
+                Shape parameter of the Gamma prior on noise variances.
+            - ``beta`` : float, default=3.0
+                Rate parameter of the Gamma prior on noise variances.
+
+        Returns
+        -------
+        options : dict
+            Merged dictionary of prior options with defaults applied.
         """
         default_dict = {"alpha": 3.0, "beta": 3.0}
         return {**default_dict, **prior_options}
 
     def _initialize_variables(self, device: Any, X: NDArray[np.float_]):
         """
-        Initializes the variables of the model by fitting PCA model in
-        sklearn and using those loadings
+        Initialize model parameters from a sklearn PCA warm start.
+
+        Fits a PCA model to ``X``, uses its loadings as ``W_``, and
+        initializes per-feature noise variances to the mean squared
+        reconstruction error.
 
         Parameters
         ----------
-        X : NDArray,(n_samples,p)
-            The data
+        device : Any
+            PyTorch device (CPU or CUDA) on which to place the tensors.
+
+        X : ndarray of shape (n_samples, n_features)
+            The training data.
 
         Returns
         -------
-        W_ : torch.tensor,(n_components,p)
-            The loadings of our latent factor model
+        W_ : Tensor of shape (n_components, n_features)
+            Initial loadings tensor with ``requires_grad=True``.
 
-        sigmal_ : torch.tensor,(p,)
-            The noise of each covariate, unrectified
+        sigmal_ : Tensor of shape (n_features,)
+            Initial unrectified per-feature noise variances with
+            ``requires_grad=True``.
         """
         if self.p is None:
             raise ValueError("Fit model first")
@@ -523,20 +585,23 @@ class FactorAnalysis(BasePCASGDModel):
         self, device: Any, trainable_variables: list[Tensor]
     ) -> None:
         """
-        Saves the learned variables
+        Store the learned parameters as numpy arrays on the instance.
 
         Parameters
         ----------
-        trainable_variables : list
-            List of tensorflow variables saved
+        device : Any
+            PyTorch device used during training.
 
-        Sets
-        ----
-        W_ : NDArray,(n_components,p)
-            The loadings
+        trainable_variables : list of Tensor
+            Tensors ``[W_, sigmal_]`` after optimization.
 
-        sigmas_ : NDArray,(n_components,p)
-            The diagonal variances
+        Attributes
+        ----------
+        W_ : ndarray of shape (n_components, n_features)
+            Fitted factor loadings.
+
+        sigmas_ : ndarray of shape (n_features,)
+            Fitted per-feature noise standard deviations (after softplus).
         """
         if device.type == "cuda":
             self.W_ = trainable_variables[0].detach().cpu().numpy()
@@ -551,7 +616,18 @@ class FactorAnalysis(BasePCASGDModel):
 
     def _test_inputs(self, X: NDArray[np.float_]):
         """
-        Just tests to make sure data is numpy array
+        Validate inputs before fitting.
+
+        Parameters
+        ----------
+        X : ndarray
+            The training data.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` is not a numpy array or the batch size exceeds the
+            number of samples.
         """
         if not isinstance(X, np.ndarray):
             raise ValueError("Data is numpy array")

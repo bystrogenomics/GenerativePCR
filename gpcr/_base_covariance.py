@@ -78,18 +78,70 @@ class BaseCovariance:
         self.covariance: NDArray | None = None
 
     def get_precision(self) -> NDArray[np.float64]:
+        """
+        Compute the precision matrix (inverse of the covariance matrix).
+
+        Returns
+        -------
+        precision : ndarray of shape (n_features, n_features)
+            The precision matrix.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
         return _get_precision(self.covariance)
 
     def get_stable_rank(self) -> np.float64:
-        if self.covariance is None:
-            raise ValueError("Covariance matrix has not been fit")
+        """
+        Compute the stable rank of the covariance matrix.
+
+        The stable rank is defined as ``||A||_F^2 / ||A||_2^2``.
+
+        Returns
+        -------
+        srank : np.float64
+            The stable rank of the covariance matrix.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
 
         return _get_stable_rank(self.covariance)
 
     def predict(self, Xobs: NDArray, idxs: NDArray):
+        """
+        Predict missing features from observed features.
+
+        Uses the conditional Gaussian formula to predict the unobserved
+        features (where ``idxs == 0``) from the observed features
+        (where ``idxs == 1``).
+
+        Parameters
+        ----------
+        Xobs : ndarray of shape (n_samples, n_observed)
+            Observed feature values, where ``n_observed = idxs.sum()``.
+
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks observed features
+            and 0 marks features to predict.
+
+        Returns
+        -------
+        preds : ndarray of shape (n_samples, n_missing)
+            Predicted values for the unobserved features.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -98,6 +150,33 @@ class BaseCovariance:
     def conditional_score(
         self, X: NDArray, idxs: NDArray, weights=None
     ) -> np.float64:
+        """
+        Compute the weighted average conditional log-likelihood.
+
+        Evaluates ``mean(log p(X[idxs==0] | X[idxs==1], covariance))``.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks observed features
+            and 0 marks unobserved features.
+
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. Normalized to have mean 1.
+
+        Returns
+        -------
+        avg_score : np.float64
+            Weighted average conditional log-likelihood.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -106,6 +185,31 @@ class BaseCovariance:
     def conditional_score_samples(
         self, X: NDArray, idxs: NDArray
     ) -> NDArray[np.float64]:
+        """
+        Compute the per-sample conditional log-likelihood.
+
+        Evaluates ``log p(X[idxs==0] | X[idxs==1], covariance)`` for each
+        sample.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks observed features
+            and 0 marks unobserved features.
+
+        Returns
+        -------
+        scores : ndarray of shape (n_samples,)
+            Per-sample conditional log-likelihood values.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -114,6 +218,34 @@ class BaseCovariance:
     def marginal_score(
         self, X: NDArray, idxs: NDArray, weights=None
     ) -> np.float64:
+        """
+        Compute the weighted average marginal log-likelihood.
+
+        Evaluates ``mean(log p(X[:, idxs==1], covariance_sub))``.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_observed)
+            Data for the observed features, where
+            ``n_observed = idxs.sum()``.
+
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks the included
+            features.
+
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. Normalized to have mean 1.
+
+        Returns
+        -------
+        avg_score : np.float64
+            Weighted average marginal log-likelihood.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -122,30 +254,124 @@ class BaseCovariance:
     def marginal_score_samples(
         self, X: NDArray, idxs: NDArray
     ) -> NDArray[np.float64]:
+        """
+        Compute the per-sample marginal log-likelihood.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_observed)
+            Data for the observed features, where
+            ``n_observed = idxs.sum()``.
+
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks the included
+            features.
+
+        Returns
+        -------
+        scores : ndarray of shape (n_samples,)
+            Per-sample marginal log-likelihood values.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
         return _marginal_score_samples(self.covariance, X, idxs)
 
     def score(self, X: NDArray, weights=None) -> np.float64:
+        """
+        Compute the weighted average log-likelihood.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        weights : ndarray of shape (n_samples,), default=None
+            Optional sample weights. Normalized to have mean 1.
+
+        Returns
+        -------
+        avg_score : np.float64
+            Weighted average log-likelihood.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
         return _score(self.covariance, X, weights=weights)
 
     def score_samples(self, X: NDArray) -> NDArray[np.float64]:
+        """
+        Compute the per-sample log-likelihood.
+
+        Parameters
+        ----------
+        X : ndarray of shape (n_samples, n_features)
+            The centered data matrix.
+
+        Returns
+        -------
+        scores : ndarray of shape (n_samples,)
+            Per-sample log-likelihood values.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
         return _score_samples(self.covariance, X)
 
     def entropy(self) -> np.float64:
+        """
+        Compute the differential entropy of the fitted Gaussian distribution.
+
+        Returns
+        -------
+        entropy : np.float64
+            Differential entropy in nats.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
         return _entropy(self.covariance)
 
     def entropy_subset(self, idxs: NDArray[np.float64]) -> np.float64:
+        """
+        Compute the differential entropy of a marginal feature subset.
+
+        Parameters
+        ----------
+        idxs : ndarray of shape (n_features,)
+            Boolean or integer index array where 1 marks the features to
+            include in the entropy computation.
+
+        Returns
+        -------
+        entropy : np.float64
+            Differential entropy of the marginal distribution in nats.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -154,6 +380,29 @@ class BaseCovariance:
     def mutual_information(
         self, idxs1: NDArray[np.float64], idxs2: NDArray[np.float64]
     ) -> np.float64:
+        """
+        Compute the mutual information between two groups of features.
+
+        Parameters
+        ----------
+        idxs1 : ndarray of shape (n_features,)
+            Boolean or integer index array selecting the first group of
+            features.
+
+        idxs2 : ndarray of shape (n_features,)
+            Boolean or integer index array selecting the second group of
+            features.
+
+        Returns
+        -------
+        mutual_information : np.float64
+            Mutual information between the two feature groups in nats.
+
+        Raises
+        ------
+        ValueError
+            If the covariance matrix has not been set.
+        """
         if self.covariance is None:
             raise ValueError("Covariance matrix has not been fit")
 
@@ -161,7 +410,17 @@ class BaseCovariance:
 
     def _test_inputs(self, X: NDArray[np.float64]) -> None:
         """
-        Just tests to make sure data is numpy array
+        Validate that ``X`` is a numpy array with no missing values.
+
+        Parameters
+        ----------
+        X : ndarray
+            Input data to validate.
+
+        Raises
+        ------
+        ValueError
+            If ``X`` is not a numpy array or contains NaN values.
         """
         if not isinstance(X, np.ndarray):
             raise ValueError("Data is not a numpy array")
@@ -854,21 +1113,25 @@ def _mutual_information(
     idxs2: NDArray[np.float64],
 ) -> np.float64:
     """
-    This computes the mutual information bewteen the two sets of
-    covariates based on the model.
+    Compute the mutual information between two groups of features.
+
+    Uses the Gaussian entropy formula: ``I(X1; X2) = H(X1) - H(X1|X2)``.
 
     Parameters
     ----------
-    idxs1 : NDArray[np.float64],(p,)
-        First group of variables
+    covariance : ndarray of shape (n_features, n_features)
+        The covariance matrix.
 
-    idxs2 : NDArray[np.float64],(p,)
-        Second group of variables
+    idxs1 : ndarray of shape (n_features,)
+        Boolean or integer index array selecting the first group of features.
+
+    idxs2 : ndarray of shape (n_features,)
+        Boolean or integer index array selecting the second group of features.
 
     Returns
     -------
     mutual_information : np.float64
-        The mutual information between the two variables
+        Mutual information between the two feature groups in nats.
     """
     idxs = np.logical_or(idxs1, idxs2).astype(int)
     cov_sub = covariance[np.ix_(idxs == 1, idxs == 1)]
