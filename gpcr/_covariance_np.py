@@ -20,11 +20,12 @@ Dependencies:
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
+
 from ._base_covariance import (
     BaseCovariance,
     _symmeterize_and_warning,
 )
-from numpy.typing import NDArray
 
 
 class EmpiricalCovariance(BaseCovariance):
