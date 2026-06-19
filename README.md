@@ -1,6 +1,8 @@
 # Generative Principal Component Regression via Variational Inference
 
-This repository contains the official code and reproducibility materials for the paper:
+[![Status](https://img.shields.io/badge/status-complete-success.svg)](#)
+
+This repository contains the finalized and complete official code implementation and reproducibility materials for the paper:
 
 **Generative Principal Component Regression via Variational Inference**
 
@@ -9,6 +11,12 @@ Published in **IEEE Transactions on Signal Processing**.
 - **IEEE Xplore:** [ieeexplore.ieee.org/abstract/document/11478741](https://ieeexplore.ieee.org/abstract/document/11478741)
 - **DOI:** [10.1109/TSP.2026.3682931](https://doi.org/10.1109/TSP.2026.3682931)
 - **arXiv preprint:** [arxiv.org/abs/2409.02327](https://arxiv.org/abs/2409.02327)
+
+---
+
+## Repository Status
+
+This repository is **complete and fully implemented**. All models, algorithms, covariance estimation methods, and corresponding unit tests from the paper have been successfully integrated and verified. No further active development or major feature additions are planned, though maintenance updates may be applied if issues arise.
 
 ---
 
